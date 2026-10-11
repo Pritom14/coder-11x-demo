@@ -1,0 +1,63 @@
+# Two small services: Postgres and a zero-dependency Node web app on :3000.
+# Host ports are loopback-only; Coder apps reach them through the agent.
+# WEB_PORT 3000 matches the template's Julian app slot, ALICE_FRONTEND_PORT 5173
+# matches the "Alice Frontend" app (this repo stands in the Alice slot).
+name: coder-11x-demo
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  web:
+    image: node:22-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      STARTUP_OPTION: ${STARTUP_OPTION:-none}
+      WORKSPACE_NAME: ${WORKSPACE_NAME:-local}
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      - "127.0.0.1:${ALICE_FRONTEND_PORT:-5173}:3000"
+    command:
+      - node
+      - -e
+      - |
+        const http = require("http"), net = require("net");
+        const dbUp = () => new Promise((done) => {
+          const s = net.connect(5432, process.env.DB_HOST);
+          s.setTimeout(1000);
+          s.on("connect", () => { s.destroy(); done(true); });
+          s.on("error", () => done(false));
+          s.on("timeout", () => { s.destroy(); done(false); });
+        });
+        http.createServer(async (req, res) => {
+          const ok = await dbUp();
+          if (req.url === "/healthz") { res.writeHead(ok ? 200 : 503); return res.end(ok ? "ok" : "db down"); }
+          res.writeHead(200, { "content-type": "text/html" });
+          res.end("<h1>coder-11x-demo</h1><ul><li>workspace: " + process.env.WORKSPACE_NAME +
+            "</li><li>startup option: " + process.env.STARTUP_OPTION +
+            "</li><li>postgres reachable: " + ok + "</li></ul>");
+        }).listen(3000, () => console.log("web listening on :3000"));
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  dbdata:
