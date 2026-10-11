@@ -20,3 +20,4 @@ Override with `DB_PORT`, `WEB_PORT`, `ALICE_FRONTEND_PORT`.
 
 Local try-out: `STARTUP_OPTION=seed bin/coder/workspace-bootstrap.sh`, then
 `bin/coder/handle-shutdown.sh`, `bin/coder/handle-restart.sh`, `make clean`.
+AO on 11x-style template 2026-10-11
